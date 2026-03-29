@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react'
+import blobToken from '../utils/token'
 import Navbar from '../components/Navbar'
 import UploadBox from '../components/UploadBox'
 import ImagePreview from '../components/ImagePreview'
@@ -98,13 +99,12 @@ export default function Home({ darkMode, setDarkMode }) {
       return
     }
 
-    // VITE_ prefix makes the variable available in the browser bundle at build time.
-    // If this is undefined, the env var was not set before the last Vercel deployment.
-    const token = import.meta.env.VITE_BLOB_READ_WRITE_TOKEN
+    // blobToken is imported from src/utils/token.js which reads VITE_BLOB_READ_WRITE_TOKEN from .env
+    const token = blobToken
     if (!token) {
       setErrorMsg(
-        'VITE_BLOB_READ_WRITE_TOKEN is not set. ' +
-        'Add it in your Vercel project → Settings → Environment Variables, then redeploy.'
+        'Blob token is missing. ' +
+        'Open src/utils/token.js and make sure VITE_BLOB_READ_WRITE_TOKEN is set in your .env file, then redeploy.'
       )
       setUploadState(UPLOAD_STATES.ERROR)
       return
