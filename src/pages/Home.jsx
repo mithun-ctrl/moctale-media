@@ -1,6 +1,4 @@
 import React, { useState, useCallback } from 'react'
-import { put } from '@vercel/blob'
-import { v4 as uuidv4 } from 'uuid'
 import Navbar from '../components/Navbar'
 import UploadBox from '../components/UploadBox'
 import ImagePreview from '../components/ImagePreview'
@@ -15,6 +13,52 @@ const UPLOAD_STATES = {
   UPLOADING: 'uploading',
   SUCCESS: 'success',
   ERROR: 'error',
+}
+
+/**
+ * Uploads a single file directly to Vercel Blob via their REST API.
+ * Uses fetch instead of @vercel/blob's put() because put() is a server-side
+ * function that reads process.env — it cannot access VITE_ env vars in the browser.
+ *
+ * Vercel Blob REST API docs:
+ * https://vercel.com/docs/storage/vercel-blob/using-blob-sdk#put
+ */
+async function uploadToVercelBlob(file, token) {
+  // Generate a unique pathname: moctale/<timestamp>-<random>.<ext>
+  const ext = file.name.split('.').pop().toLowerCase() || 'jpg'
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  const pathname = `moctale/${unique}.${ext}`
+
+  const response = await fetch(
+    `https://blob.vercel-storage.com/${pathname}?access=public`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-api-version': '7',
+      },
+      body: file,
+    }
+  )
+
+  if (!response.ok) {
+    // Surface the Vercel API error message if available
+    let detail = ''
+    try {
+      const json = await response.json()
+      detail = json?.error || json?.message || ''
+    } catch {
+      detail = await response.text().catch(() => '')
+    }
+    throw new Error(
+      `Blob API error ${response.status}${detail ? `: ${detail}` : ''}. ` +
+      'Check that your VITE_BLOB_READ_WRITE_TOKEN is valid and has write access.'
+    )
+  }
+
+  const data = await response.json()
+  return data.url // public CDN URL returned by Vercel Blob
 }
 
 export default function Home({ darkMode, setDarkMode }) {
@@ -54,9 +98,14 @@ export default function Home({ darkMode, setDarkMode }) {
       return
     }
 
+    // VITE_ prefix makes the variable available in the browser bundle at build time.
+    // If this is undefined, the env var was not set before the last Vercel deployment.
     const token = import.meta.env.VITE_BLOB_READ_WRITE_TOKEN
     if (!token) {
-      setErrorMsg('Vercel Blob token is not configured. Please set VITE_BLOB_READ_WRITE_TOKEN in your .env file.')
+      setErrorMsg(
+        'VITE_BLOB_READ_WRITE_TOKEN is not set. ' +
+        'Add it in your Vercel project → Settings → Environment Variables, then redeploy.'
+      )
       setUploadState(UPLOAD_STATES.ERROR)
       return
     }
@@ -70,36 +119,23 @@ export default function Home({ darkMode, setDarkMode }) {
     try {
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i]
-        const ext = file.name.split('.').pop().toLowerCase()
-        const uniqueName = `moctale/${uuidv4()}.${ext}`
 
         setCurrentFileLabel(`Uploading ${i + 1} of ${validFiles.length}`)
         setUploadProgress((i / validFiles.length) * 100)
 
-        const blob = await put(uniqueName, file, {
-          access: 'public',
-          token,
-        })
+        // Direct REST API call — works in the browser with VITE_ env vars
+        const url = await uploadToVercelBlob(file, token)
+        uploadedUrls.push(url)
 
-        uploadedUrls.push(blob.url)
         setUploadProgress(((i + 1) / validFiles.length) * 100)
       }
 
       setUploadedCount(uploadedUrls.length)
-
-      // Build shareable URL
-      let finalUrl
-      if (uploadedUrls.length === 1) {
-        finalUrl = buildShareableLink(uploadedUrls)
-      } else {
-        finalUrl = buildShareableLink(uploadedUrls)
-      }
-
-      setShareUrl(finalUrl)
+      setShareUrl(buildShareableLink(uploadedUrls))
       setUploadState(UPLOAD_STATES.SUCCESS)
     } catch (err) {
       console.error('Upload failed:', err)
-      setErrorMsg(err?.message || 'Upload failed. Please check your token and try again.')
+      setErrorMsg(err?.message || 'Upload failed. Please try again.')
       setUploadState(UPLOAD_STATES.ERROR)
     }
   }
