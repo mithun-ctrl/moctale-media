@@ -1,0 +1,305 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Link } from 'react-router-dom'
+import Navbar from '../components/Navbar'
+import { parseUrlData } from '../utils/decodeData'
+
+// Lazy-loaded image with intersection observer
+function LazyImage({ src, index, onLoad }) {
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState(false)
+  const [inView, setInView] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '100px' }
+    )
+    if (ref.current) observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [])
+
+  const handleLoad = () => {
+    setLoaded(true)
+    onLoad?.()
+  }
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(src)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const ext = src.split('.').pop().split('?')[0] || 'jpg'
+      a.href = url
+      a.download = `moctale-image-${index + 1}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      window.open(src, '_blank')
+    }
+  }
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(src)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* silent */
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="image-card group rounded-xl overflow-hidden bg-obsidian-800 border border-obsidian-700
+                 hover:border-obsidian-500 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl
+                 hover:shadow-obsidian-900/50"
+      style={{
+        animationDelay: `${index * 60}ms`,
+        animation: inView ? `floatUp 0.5s ease-out ${index * 60}ms both` : 'none',
+      }}
+    >
+      {/* Skeleton */}
+      {!loaded && !error && (
+        <div className="w-full bg-obsidian-800 animate-pulse" style={{ minHeight: '200px' }}>
+          <div className="w-full h-full bg-gradient-to-br from-obsidian-800 to-obsidian-700" style={{ minHeight: '200px' }} />
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="w-full flex flex-col items-center justify-center gap-2 py-12 px-4 text-center bg-obsidian-800">
+          <svg className="w-8 h-8 text-obsidian-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <p className="text-obsidian-500 text-xs font-mono">Failed to load</p>
+        </div>
+      )}
+
+      {/* Image */}
+      {inView && (
+        <img
+          src={src}
+          alt={`Image ${index + 1}`}
+          className={`w-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
+          style={{ maxHeight: '500px' }}
+          onLoad={handleLoad}
+          onError={() => setError(true)}
+          loading="lazy"
+        />
+      )}
+
+      {/* Action overlay */}
+      {loaded && (
+        <div className="card-actions">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-obsidian-950/90 backdrop-blur
+                         text-cream text-xs font-medium hover:bg-amber-500 hover:text-obsidian-950
+                         transition-all duration-200 border border-white/10"
+              title="Download"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download
+            </button>
+            <button
+              onClick={handleCopyLink}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-obsidian-950/90 backdrop-blur
+                         text-xs font-medium transition-all duration-200 border border-white/10
+                         hover:bg-obsidian-800"
+              title="Copy image link"
+            >
+              {copied ? (
+                <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5 text-obsidian-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              )}
+            </button>
+
+            {/* Image counter */}
+            <span className="ml-auto text-obsidian-500 text-xs font-mono">
+              {index + 1}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function View({ darkMode, setDarkMode }) {
+  const [urls, setUrls] = useState([])
+  const [error, setError] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+  const [copiedAll, setCopiedAll] = useState(false)
+  const [loadedCount, setLoadedCount] = useState(0)
+
+  useEffect(() => {
+    const { urls: parsedUrls, error: parseError } = parseUrlData()
+    setUrls(parsedUrls)
+    setError(parseError)
+    setLoaded(true)
+  }, [])
+
+  const handleCopyPageUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopiedAll(true)
+      setTimeout(() => setCopiedAll(false), 2000)
+    } catch { /* silent */ }
+  }
+
+  const handleImageLoad = useCallback(() => {
+    setLoadedCount(c => c + 1)
+  }, [])
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-obsidian-950 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-obsidian-700 border-t-amber-500 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-obsidian-950 flex flex-col">
+      <Navbar darkMode={darkMode} setDarkMode={setDarkMode} />
+
+      {/* Background ambient */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-1/4 w-[400px] h-[400px]
+                        rounded-full bg-amber-500/3 blur-3xl" />
+      </div>
+
+      <main className="relative flex-1 px-4 pt-24 pb-16">
+        <div className="max-w-6xl mx-auto space-y-8">
+
+          {/* Error state */}
+          {error && (
+            <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 animate-float-up">
+              <div className="w-16 h-16 rounded-2xl bg-obsidian-800 flex items-center justify-center">
+                <svg className="w-8 h-8 text-obsidian-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="font-display font-semibold text-xl text-cream">Link not found</h2>
+                <p className="text-obsidian-400 text-sm mt-2 max-w-sm">{error}</p>
+              </div>
+              <Link to="/" className="btn-primary mt-4">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back to upload
+              </Link>
+            </div>
+          )}
+
+          {/* Gallery */}
+          {!error && urls.length > 0 && (
+            <>
+              {/* Gallery header */}
+              <div className="flex items-start justify-between gap-4 flex-wrap animate-float-up">
+                <div>
+                  <h1 className="font-display font-bold text-2xl sm:text-3xl text-cream">
+                    Gallery
+                    <span className="ml-3 text-base font-body font-normal text-obsidian-500 align-middle">
+                      {urls.length} {urls.length === 1 ? 'image' : 'images'}
+                    </span>
+                  </h1>
+                  <p className="text-obsidian-500 text-sm mt-1 font-mono">
+                    Shared via Moctale Media
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyPageUrl}
+                    className={`btn-ghost text-sm ${copiedAll ? 'border-amber-500/50 text-amber-400' : ''}`}
+                  >
+                    {copiedAll ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                        Share link
+                      </>
+                    )}
+                  </button>
+                  <Link to="/" className="btn-primary text-sm">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Upload
+                  </Link>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="h-px bg-gradient-to-r from-transparent via-obsidian-700 to-transparent" />
+
+              {/* Responsive masonry-style grid */}
+              <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+                {urls.map((url, index) => (
+                  <div key={url} className="break-inside-avoid mb-4">
+                    <LazyImage
+                      src={url}
+                      index={index}
+                      onLoad={handleImageLoad}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Load progress */}
+              {loadedCount < urls.length && (
+                <div className="text-center py-4">
+                  <p className="text-obsidian-500 text-xs font-mono">
+                    Loading {loadedCount}/{urls.length} images...
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="py-6 text-center">
+        <Link to="/" className="text-obsidian-600 text-xs font-mono hover:text-obsidian-400 transition-colors">
+          Moctale Media · Upload your own images →
+        </Link>
+      </footer>
+    </div>
+  )
+}
